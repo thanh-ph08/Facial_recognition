@@ -1,0 +1,18 @@
+# Torch CPU (nếu bạn muốn GPU thì đổi link index-url khi cài)
+torch
+torchvision
+torchaudio
+
+
+# Xử lý ảnh
+opencv-python
+Pillow
+numpy
+facenet-pytorch
+
+# Web backend
+flask
+
+# Thư viện hỗ trợ
+matplotlib
+scikit-learn
