@@ -1,1 +1,43 @@
-
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Capture</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+<div class="container">
+    <h1>Ứng dụng điểm danh</h1>
+    <div class="flex-row">
+        <div class="video-frame">
+            <video id="video" autoplay></video>
+            <canvas id="canvas" style="display:none;"></canvas>
+            <div class="button-container">
+                <button id="startWebcamBtn">Bật Webcam</button>
+                <button id="autoRecBtn" disabled>Nhận diện</button>
+            </div>
+        </div>
+        <div class="text-frame">
+            <h2>Danh sách lớp</h2>
+            <div class="filter-buttons">
+                <button id="show-all-btn">Tất cả</button>
+                <button id="show-present-btn">Đã điểm danh</button>
+                <button id="show-absent-btn">Chưa điểm danh</button>
+            </div>
+                <input type="text" id="search-input" placeholder="Tìm tên học sinh..." />  
+            <div id="text-box">
+                <div class="student-list" id="student-list">
+                    {% for s in students %}
+                    <div class="student-box {% if s.present %}present{% else %}absent{% endif %}" id="student-{{ loop.index }}">
+                        {{ s.name }}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<script src="/static/js/script.js"></script>
+</body>
+</html>
