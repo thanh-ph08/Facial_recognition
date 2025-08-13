@@ -4,6 +4,7 @@ import torch
 import torch.nn.functional as F
 from torchvision import transforms
 from PIL import Image
+from facenet_pytorch import MTCNN
 
 # ------------------ Cấu hình ------------------
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -11,8 +12,8 @@ print(f"✅ Đang sử dụng thiết bị: {DEVICE}")
 
 MODEL_PATH = "cnn_functional_model.pt"
 DB_PATH = "face_database.pt"
-THRESHOLD = 0.9  # Ngưỡng nhận diện, có thể điều chỉnh
-MAX_IMAGES_PER_PERSON = 20  # Giới hạn số ảnh cho mỗi người
+THRESHOLD = 1.0  # Ngưỡng nhận diện
+MAX_IMAGES_PER_PERSON = 20  # Giới hạn ảnh mỗi người
 
 # ------------------ Tải trọng số ------------------
 state = torch.load(MODEL_PATH, map_location=DEVICE)
@@ -46,10 +47,8 @@ transform = transforms.Compose([
     transforms.Normalize([0.5]*3, [0.5]*3)
 ])
 
-# ------------------ Phát hiện khuôn mặt ------------------
-face_cascade = cv2.CascadeClassifier(
-    cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-)
+# ------------------ MTCNN Detector ------------------
+mtcnn = MTCNN(keep_all=True, device=DEVICE)
 
 # ------------------ Hàm trích xuất embedding ------------------
 def extract_embedding(face_img_bgr):
@@ -73,10 +72,12 @@ def recognize(query_emb):
     print(f"🔍 Nhận diện: {best_name} (khoảng cách {best_dist:.4f})")
     return (best_name, best_dist) if best_dist < THRESHOLD else ("Unknown", best_dist)
 
+# ------------------ Hàm trả về tất cả tên trong database ------------------
 def get_all_names():
     return list(database.keys())
 
-if __name__ == "__main__":
+# ------------------ Vòng lặp chính ------------------
+def main():
     cap = cv2.VideoCapture(0)
     print("📷 Đang mở camera. Nhấn 'a' để thêm người, ESC để thoát.")
 
@@ -86,9 +87,16 @@ if __name__ == "__main__":
             print("❌ Không thể đọc từ camera.")
             break
 
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
+        # Phát hiện khuôn mặt với MTCNN
+        boxes, _ = mtcnn.detect(frame)
+        faces = []
 
+        if boxes is not None:
+            for box in boxes:
+                x1, y1, x2, y2 = [int(coord) for coord in box]
+                faces.append((x1, y1, x2 - x1, y2 - y1))
+
+        # Nhận diện và hiển thị khuôn mặt
         for (x, y, w, h) in faces:
             face_img = frame[y:y+h, x:x+w]
             emb = extract_embedding(face_img)
@@ -98,6 +106,7 @@ if __name__ == "__main__":
             cv2.rectangle(frame, (x, y), (x+w, y+h), color, 2)
             cv2.putText(frame, label, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
 
+        # Xử lý phím
         key = cv2.waitKey(1) & 0xFF
         if key == 27:  # ESC
             break
@@ -133,8 +142,10 @@ if __name__ == "__main__":
             else:
                 print("⚠️ Không thêm được ảnh nào.")
 
-        cv2.imshow("Real-time Face Recognition", frame)
+        cv2.imshow("Real-time Face Recognition (MTCNN)", frame)
 
     cap.release()
     cv2.destroyAllWindows()
 
+if __name__ == "__main__":
+    main()
