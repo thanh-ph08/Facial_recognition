@@ -1,0 +1,183 @@
+
+body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+    background: linear-gradient(135deg, #e0e7ff 0%, #f0f4ff 100%);
+}
+
+.container {
+    text-align: center;
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(60, 80, 180, 0.12);
+    padding: 40px 32px;
+}
+
+h1 {
+    margin-bottom: 20px;
+    color: #2a3a6e;
+    letter-spacing: 1px;
+}
+
+#video {
+    border: 2px solid #4f8cff;
+    border-radius: 12px;
+    width: 640px;
+    height: 480px;
+    box-shadow: 0 4px 16px rgba(79, 140, 255, 0.08);
+    background: #eaf2ff;
+}
+
+.button-container button,
+#captureBtn,
+#startWebcamBtn {
+    margin-top: 20px;
+    padding: 10px 24px;
+    font-size: 16px;
+    background: linear-gradient(90deg, #4f8cff 0%, #6ed6ff 100%);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(79, 140, 255, 0.12);
+    transition: background 0.2s, box-shadow 0.2s;
+}
+
+.button-container button:hover,
+#captureBtn:hover,
+#startWebcamBtn:hover {
+    background: linear-gradient(90deg, #357ae8 0%, #4f8cff 100%);
+    box-shadow: 0 4px 16px rgba(79, 140, 255, 0.18);
+}
+
+.flex-row {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 40px;
+    margin-top: 20px;
+}
+
+.video-frame {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: 480px;  
+}
+
+.text-frame {
+    width: 480px;
+    height: 560px;
+    border: 2px solid #4f8cff;
+    border-radius: 12px;
+    padding: 24px 16px;
+    background: #f6fbff;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    box-shadow: 0 4px 16px rgba(79, 140, 255, 0.08);
+}
+
+.text-frame h2 {
+    color: #357ae8;
+    margin-bottom: 12px;
+    font-size: 20px;
+    font-weight: 600;
+}
+
+#text-box {
+    margin-top: 10px;
+    width: 100%;
+    min-height: 340px;
+    padding: 14px;
+    font-size: 16px;
+    color: #2a3a6e;
+    box-shadow: 0 2px 8px rgba(79, 140, 255, 0.05);
+    word-break: break-word;
+    transition: border 0.2s;
+    box-sizing: border-box; /* Thêm dòng này để padding không làm tràn khung */
+}
+
+#text-box:focus,
+#text-box:hover {
+    border-color: #4f8cff;
+}
+
+.student-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-top: 32px;
+    justify-content: flex-start;
+    align-items: stretch;
+    max-height: 300px;      /* Chiều cao tối đa của danh sách */
+    overflow-y: auto;       /* Hiển thị thanh cuộn dọc khi vượt quá */
+    padding-right: 8px;     /* Để tránh che mất nội dung bởi thanh cuộn */
+    scrollbar-width: thin;  /* Thanh cuộn nhỏ gọn cho Firefox */
+}
+.student-box {
+    padding: 16px 24px;
+    border-radius: 8px;
+    color: #fff;
+    font-weight: 600;
+    font-size: 18px;
+    background: #e74c3c; /* đỏ */
+    transition: background 0.3s;
+}
+.student-box.present {
+    background: #27ae60; /* xanh lá */
+}
+
+.student-list::-webkit-scrollbar {
+    width: 6px;
+    background: #e0e7ff;
+    border-radius: 8px;
+}
+.student-list::-webkit-scrollbar-thumb {
+    background: #4f8cff;
+    border-radius: 8px;
+}
+
+
+.filter-buttons {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 10px;
+    justify-content: center;
+}
+.filter-buttons button {
+    padding: 8px 18px;
+    font-size: 15px;
+    border-radius: 6px;
+    border: none;
+    background: #e0e7ff;
+    color: #357ae8;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background 0.2s, color 0.2s;
+}
+.filter-buttons button.active,
+.filter-buttons button:hover {
+    background: #357ae8;
+    color: #fff;
+}
+
+#search-input {
+    width: 100%;
+    padding: 10px 14px;
+    margin-bottom: 12px;
+    border: 1.5px solid #4f8cff;
+    border-radius: 8px;
+    font-size: 16px;
+    outline: none;
+    box-sizing: border-box;
+    transition: border 0.2s;
+}
+#search-input:focus {
+    border-color: #357ae8;
+}
