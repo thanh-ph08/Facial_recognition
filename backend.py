@@ -11,7 +11,7 @@ print(f"✅ Đang sử dụng thiết bị: {DEVICE}")
 
 MODEL_PATH = "cnn_functional_model.pt"
 DB_PATH = "face_database.pt"
-THRESHOLD = 0.8  # Ngưỡng nhận diện, có thể điều chỉnh
+THRESHOLD = 0.9  # Ngưỡng nhận diện, có thể điều chỉnh
 MAX_IMAGES_PER_PERSON = 20  # Giới hạn số ảnh cho mỗi người
 
 # ------------------ Tải trọng số ------------------
@@ -73,65 +73,68 @@ def recognize(query_emb):
     print(f"🔍 Nhận diện: {best_name} (khoảng cách {best_dist:.4f})")
     return (best_name, best_dist) if best_dist < THRESHOLD else ("Unknown", best_dist)
 
-# ------------------ Camera chính ------------------
-cap = cv2.VideoCapture(0)
-print("📷 Đang mở camera. Nhấn 'a' để thêm người, ESC để thoát.")
+def get_all_names():
+    return list(database.keys())
 
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        print("❌ Không thể đọc từ camera.")
-        break
+if __name__ == "__main__":
+    cap = cv2.VideoCapture(0)
+    print("📷 Đang mở camera. Nhấn 'a' để thêm người, ESC để thoát.")
 
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("❌ Không thể đọc từ camera.")
+            break
 
-    for (x, y, w, h) in faces:
-        face_img = frame[y:y+h, x:x+w]
-        emb = extract_embedding(face_img)
-        name, dist = recognize(emb)
-        color = (0, 255, 0) if name != "Unknown" else (0, 0, 255)
-        label = f"{name} ({dist:.2f})" if name != "Unknown" else "Unknown"
-        cv2.rectangle(frame, (x, y), (x+w, y+h), color, 2)
-        cv2.putText(frame, label, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
 
-    key = cv2.waitKey(1) & 0xFF
-    if key == 27:  # ESC
-        break
-
-    elif key == ord('a'):  # Thêm người mới
-        new_name = input("✏️ Nhập tên người mới: ").strip()
-        if not new_name:
-            print("❌ Tên không hợp lệ.")
-            continue
-
-        if len(faces) == 0:
-            print("❌ Không phát hiện khuôn mặt để thêm.")
-            continue
-
-        added_count = 0
         for (x, y, w, h) in faces:
             face_img = frame[y:y+h, x:x+w]
-            img_rgb = Image.fromarray(cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB))
-            tensor = transform(img_rgb).unsqueeze(0).cpu()
+            emb = extract_embedding(face_img)
+            name, dist = recognize(emb)
+            color = (0, 255, 0) if name != "Unknown" else (0, 0, 255)
+            label = f"{name} ({dist:.2f})" if name != "Unknown" else "Unknown"
+            cv2.rectangle(frame, (x, y), (x+w, y+h), color, 2)
+            cv2.putText(frame, label, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
 
-            if new_name in database:
-                if database[new_name].shape[0] >= MAX_IMAGES_PER_PERSON:
-                    print(f"⚠️ {new_name} đã đủ {MAX_IMAGES_PER_PERSON} ảnh.")
-                    break
-                database[new_name] = torch.cat([database[new_name], tensor], dim=0)
+        key = cv2.waitKey(1) & 0xFF
+        if key == 27:  # ESC
+            break
+
+        elif key == ord('a'):  # Thêm người mới
+            new_name = input("✏️ Nhập tên người mới: ").strip()
+            if not new_name:
+                print("❌ Tên không hợp lệ.")
+                continue
+
+            if len(faces) == 0:
+                print("❌ Không phát hiện khuôn mặt để thêm.")
+                continue
+
+            added_count = 0
+            for (x, y, w, h) in faces:
+                face_img = frame[y:y+h, x:x+w]
+                img_rgb = Image.fromarray(cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB))
+                tensor = transform(img_rgb).unsqueeze(0).cpu()
+
+                if new_name in database:
+                    if database[new_name].shape[0] >= MAX_IMAGES_PER_PERSON:
+                        print(f"⚠️ {new_name} đã đủ {MAX_IMAGES_PER_PERSON} ảnh.")
+                        break
+                    database[new_name] = torch.cat([database[new_name], tensor], dim=0)
+                else:
+                    database[new_name] = tensor
+                added_count += 1
+
+            if added_count > 0:
+                torch.save(database, DB_PATH)
+                print(f"✅ Đã thêm {added_count} ảnh cho {new_name}.")
             else:
-                database[new_name] = tensor
-            added_count += 1
+                print("⚠️ Không thêm được ảnh nào.")
 
-        if added_count > 0:
-            torch.save(database, DB_PATH)
-            print(f"✅ Đã thêm {added_count} ảnh cho {new_name}.")
-        else:
-            print("⚠️ Không thêm được ảnh nào.")
+        cv2.imshow("Real-time Face Recognition", frame)
 
-    cv2.imshow("Real-time Face Recognition", frame)
-
-cap.release()
-cv2.destroyAllWindows()
+    cap.release()
+    cv2.destroyAllWindows()
 
