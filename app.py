@@ -1,161 +1,136 @@
 import os
-import time
 import cv2
 import torch
-import numpy as np
-from facenet_pytorch import MTCNN
-from model import load_cnn, load_mlp, load_embeddings
-from recognize import get_embedding
-from PIL import Image
+import torch.nn.functional as F
 from torchvision import transforms
-import pickle
-import random
+from PIL import Image
 
-# =====================
-# Cấu hình & khởi tạo
-# =====================
+# ------------------ Cấu hình ------------------
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-CNN_WEIGHTS = "cnn_weights.pth"
-MLP_WEIGHTS = "mlp_weights.pkl"
-DB_PATH = "processed_features_cnn.pt"
+print(f"✅ Đang sử dụng thiết bị: {DEVICE}")
 
-cnn_model = load_cnn(CNN_WEIGHTS)
-W1, b1, W2, b2 = load_mlp(MLP_WEIGHTS)
-database = load_embeddings(DB_PATH) if os.path.exists(DB_PATH) else {}
+MODEL_PATH = "cnn_functional_model.pt"
+DB_PATH = "face_database.pt"
+THRESHOLD = 0.8  # Ngưỡng nhận diện, có thể điều chỉnh
+MAX_IMAGES_PER_PERSON = 20  # Giới hạn số ảnh cho mỗi người
 
+# ------------------ Tải trọng số ------------------
+state = torch.load(MODEL_PATH, map_location=DEVICE)
+conv_w = state["conv_w"].to(DEVICE)
+conv_b = state["conv_b"].to(DEVICE)
+fc_w = state["fc_w"].to(DEVICE)
+fc_b = state["fc_b"].to(DEVICE)
+
+# ------------------ Mạng CNN thuần hàm ------------------
+def forward_cnn(x, conv_w, conv_b, fc_w, fc_b):
+    x = F.conv2d(x, conv_w, conv_b, stride=1, padding=1)
+    x = F.relu(x)
+    x = F.max_pool2d(x, kernel_size=2)
+    x = x.view(x.size(0), -1)
+    x = torch.matmul(x, fc_w) + fc_b
+    x = F.normalize(x, p=2, dim=1)
+    return x
+
+# ------------------ Load cơ sở dữ liệu ------------------
+if os.path.exists(DB_PATH):
+    database = torch.load(DB_PATH)
+    print(f"📁 Đã tải database với {len(database)} người.")
+else:
+    database = {}
+    print("📁 Không tìm thấy database, tạo mới.")
+
+# ------------------ Tiền xử lý ảnh ------------------
 transform = transforms.Compose([
     transforms.Resize((128, 128)),
     transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                         std=[0.229, 0.224, 0.225])
+    transforms.Normalize([0.5]*3, [0.5]*3)
 ])
 
-mtcnn = MTCNN(image_size=128, margin=20, keep_all=True, device=DEVICE)
+# ------------------ Phát hiện khuôn mặt ------------------
+face_cascade = cv2.CascadeClassifier(
+    cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+)
 
+# ------------------ Hàm trích xuất embedding ------------------
+def extract_embedding(face_img_bgr):
+    img_rgb = Image.fromarray(cv2.cvtColor(face_img_bgr, cv2.COLOR_BGR2RGB))
+    tensor = transform(img_rgb).unsqueeze(0).to(DEVICE)
+    with torch.no_grad():
+        emb = forward_cnn(tensor, conv_w, conv_b, fc_w, fc_b).squeeze(0)
+    return emb
 
-# =====================
-# Hàm chuyển embedding CNN qua MLP lấy vector 128 chiều
-# =====================
-def get_mlp_embedding(embedding_input):
-    if embedding_input.ndim > 1:
-        embedding_input = embedding_input.flatten()
+# ------------------ Hàm nhận diện ------------------
+def recognize(query_emb):
+    best_name, best_dist = "Unknown", float('inf')
+    for name, tensors in database.items():
+        tensors = tensors.to(DEVICE)
+        with torch.no_grad():
+            embs = forward_cnn(tensors, conv_w, conv_b, fc_w, fc_b)
+        dists = torch.norm(embs - query_emb.unsqueeze(0), dim=1)
+        min_dist = torch.min(dists).item()
+        if min_dist < best_dist:
+            best_name, best_dist = name, min_dist
+    print(f"🔍 Nhận diện: {best_name} (khoảng cách {best_dist:.4f})")
+    return (best_name, best_dist) if best_dist < THRESHOLD else ("Unknown", best_dist)
 
-    h1 = np.dot(embedding_input, W1) + b1
-    h1 = np.maximum(h1, 0)  # ReLU
-    out = np.dot(h1, W2) + b2  # Output embedding 128-dim
-    return out
+# ------------------ Camera chính ------------------
+cap = cv2.VideoCapture(0)
+print("📷 Đang mở camera. Nhấn 'a' để thêm người, ESC để thoát.")
 
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        print("❌ Không thể đọc từ camera.")
+        break
 
-# =====================
-# Hàm nhận diện dùng khoảng cách Euclidean với mẫu trong DB (Siamese)
-# Mỗi người trong DB giữ list embedding (vector 128-dim)
-# Mỗi lần nhận diện random lấy 3 ảnh đại diện của mỗi người để tính khoảng cách trung bình
-# =====================
-def recognize_face_mlp(embedding):
-    query_emb = get_mlp_embedding(embedding)
-    min_dist = float('inf')
-    best_label = "Unknown"
-    threshold = 1.5  # Ngưỡng khoảng cách cho nhận diện (có thể điều chỉnh)
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
 
-    for person, vec_list in database.items():
-        if len(vec_list) == 0:
+    for (x, y, w, h) in faces:
+        face_img = frame[y:y+h, x:x+w]
+        emb = extract_embedding(face_img)
+        name, dist = recognize(emb)
+        color = (0, 255, 0) if name != "Unknown" else (0, 0, 255)
+        label = f"{name} ({dist:.2f})" if name != "Unknown" else "Unknown"
+        cv2.rectangle(frame, (x, y), (x+w, y+h), color, 2)
+        cv2.putText(frame, label, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+
+    key = cv2.waitKey(1) & 0xFF
+    if key == 27:  # ESC
+        break
+
+    elif key == ord('a'):  # Thêm người mới
+        new_name = input("✏️ Nhập tên người mới: ").strip()
+        if not new_name:
+            print("❌ Tên không hợp lệ.")
             continue
-        # Random 3 embedding đại diện hoặc ít hơn nếu không đủ
-        sampled_vecs = random.sample(list(vec_list), min(len(vec_list), 3))
-        # Tính khoảng cách Euclidean trung bình
-        dists = [np.linalg.norm(query_emb - get_mlp_embedding(v)) for v in sampled_vecs]
-        avg_dist = np.mean(dists)
 
-        if avg_dist < min_dist:
-            min_dist = avg_dist
-            best_label = person
+        if len(faces) == 0:
+            print("❌ Không phát hiện khuôn mặt để thêm.")
+            continue
 
-    if min_dist > threshold:
-        return "Unknown", min_dist
-    else:
-        return best_label, min_dist
+        added_count = 0
+        for (x, y, w, h) in faces:
+            face_img = frame[y:y+h, x:x+w]
+            img_rgb = Image.fromarray(cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB))
+            tensor = transform(img_rgb).unsqueeze(0).cpu()
 
-
-# =====================
-# Thêm người mới
-# =====================
-def add_new_person(name, face_img):
-    embedding = get_embedding(cnn_model, face_img, DEVICE)
-    if name in database:
-        database[name].append(embedding)
-    else:
-        database[name] = [embedding]
-    torch.save(database, DB_PATH)
-    print(f"[INFO] Đã thêm {name} vào database.")
-
-
-# =====================
-# Chạy demo webcam
-# =====================
-def run():
-    cap = cv2.VideoCapture(0)
-    print("[INFO] Nhấn SPACE để chụp & nhận diện | 'c' để thêm người mới | 'q' để thoát")
-
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-
-        # Hiển thị camera nhưng không xử lý cho đến khi bấm SPACE
-        cv2.imshow("Face Recognition", frame)
-        key = cv2.waitKey(1) & 0xFF
-
-        if key == ord("q"):
-            break
-
-        elif key == ord(" "):  # Nhấn SPACE để nhận diện khuôn mặt
-            boxes, _ = mtcnn.detect(frame)
-
-            if boxes is not None:
-                for box in boxes:
-                    x1, y1, x2, y2 = map(int, box)
-                    x1, y1 = max(0, x1), max(0, y1)
-                    x2, y2 = min(frame.shape[1], x2), min(frame.shape[0], y2)
-
-                    if x2 <= x1 or y2 <= y1:
-                        continue
-
-                    face_img = frame[y1:y2, x1:x2]
-                    try:
-                        face_resized = cv2.resize(face_img, (128, 128))
-                    except:
-                        continue
-
-                    embedding = get_embedding(cnn_model, face_resized, DEVICE)
-                    name, dist = recognize_face_mlp(embedding)
-                    display_name = f"{name} ({dist:.2f})"
-
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                    cv2.putText(frame, display_name, (x1, y1 - 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-
-                    cv2.imshow("Face Recognition", frame)
-                    cv2.waitKey(0)  # Đợi phím bất kỳ để tiếp tục
-
+            if new_name in database:
+                if database[new_name].shape[0] >= MAX_IMAGES_PER_PERSON:
+                    print(f"⚠️ {new_name} đã đủ {MAX_IMAGES_PER_PERSON} ảnh.")
+                    break
+                database[new_name] = torch.cat([database[new_name], tensor], dim=0)
             else:
-                print("[INFO] Không phát hiện khuôn mặt.")
+                database[new_name] = tensor
+            added_count += 1
 
-        elif key == ord("c"):
-            boxes, _ = mtcnn.detect(frame)
-            if boxes is not None and len(boxes) > 0:
-                x1, y1, x2, y2 = map(int, boxes[0])
-                face_img = frame[y1:y2, x1:x2]
-                face_img = cv2.resize(face_img, (128, 128))
-                new_name = input("Tên người mới: ").strip()
-                if new_name:
-                    add_new_person(new_name, face_img)
+        if added_count > 0:
+            torch.save(database, DB_PATH)
+            print(f"✅ Đã thêm {added_count} ảnh cho {new_name}.")
+        else:
+            print("⚠️ Không thêm được ảnh nào.")
 
-    cap.release()
-    cv2.destroyAllWindows()
+    cv2.imshow("Real-time Face Recognition", frame)
 
-
-# =====================
-# Main
-# =====================
-if __name__ == "__main__":
-    run()
+cap.release()
+cv2.destroyAllWindows()
